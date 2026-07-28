@@ -1,12 +1,12 @@
 <# Simple Driver Check / Repair (minimal) #>
-<#!
+<#
 Minimal PowerShell 5.1 WPF utility:
   - List installed drivers (Get-WindowsDriver -Online -All)
   - Scan a folder recursively for *.inf
   - Install selected INF(s) with pnputil
 Intentionally no logging / caching / filtering / categories.
 If you see any text beyond the line '# EOF', the file has unwanted leftovers.
-!>
+#>
 if(-not ((New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))){
   Add-Type -AssemblyName PresentationFramework
   [System.Windows.MessageBox]::Show('Run PowerShell as Administrator.','Driver Check','OK','Warning')|Out-Null
@@ -446,13 +446,13 @@ $script:InitialLoadComplete = $false
 $script:ScanInProgress = $false
 $script:ScanCancel = $false
 
-function Ensure-Array {
+function Get-Array {
   param($Value)
   if ($null -eq $Value) { return @() }
   return @($Value)
 }
 
-function Parse-DriverVersion {
+function Get-DriverVersionInfo {
   param([string]$Text)
   $result = [ordered]@{ Date=$null; Version=$null; Raw=$Text }
   if ([string]::IsNullOrWhiteSpace($Text)) { return [pscustomobject]$result }
@@ -477,8 +477,8 @@ function Parse-DriverVersion {
 
 function Compare-DriverVersions {
   param([string]$Left, [string]$Right)
-  $l = Parse-DriverVersion $Left
-  $r = Parse-DriverVersion $Right
+  $l = Get-DriverVersionInfo $Left
+  $r = Get-DriverVersionInfo $Right
   # Prefer Version compare when both available
   if ($l.Version -and $r.Version) {
     if ($l.Version -gt $r.Version) { return 1 }
@@ -501,10 +501,10 @@ function Compare-DriverVersions {
   return 0
 }
 
-function Load-InstalledCache {
+function Import-InstalledCache {
   Write-Log "Loading installed drivers…"
   $script:InstalledCacheAll = Get-InstalledDrivers
-  Apply-Filter
+  Invoke-Filter
 }
 
 function Scan-Folder {
@@ -624,9 +624,9 @@ function Scan-Folder {
       if ($Prg) { $Prg.Value = 0; $Prg.IsIndeterminate = $false }
       if ($LblStatus) { $LblStatus.Text = 'Scan canceled.' }
     } else {
-      Write-Log 'SCAN TRACE: Before Apply-Filter' 'DEBUG'
-      Apply-Filter
-      Write-Log 'SCAN TRACE: After Apply-Filter' 'DEBUG'
+      Write-Log 'SCAN TRACE: Before Invoke-Filter' 'DEBUG'
+      Invoke-Filter
+      Write-Log 'SCAN TRACE: After Invoke-Filter' 'DEBUG'
       if ($Prg) { $Prg.Value = 0; $Prg.IsIndeterminate = $false }
       if ($LblStatus) { $LblStatus.Text = "Scan complete. Available: $($script:AvailableFiltered.Count)" }
     }
@@ -671,9 +671,9 @@ function Test-MatchByCategory {
 }
 
 # --- Simplified filtering path (SimpleMode) ---
-function Apply-FilterSimple {
+function Invoke-FilterSimple {
   try {
-  Write-Log 'Apply-FilterSimple invoked.' 'DEBUG'
+  Write-Log 'Invoke-FilterSimple invoked.' 'DEBUG'
     $search = ([string]$TxtSearch.Text).Trim().ToLower()
     $cat    = $script:CurrentCategory
   $catLabel = 'ALL'
@@ -755,17 +755,17 @@ function Apply-FilterSimple {
   Write-Log ("Simple filter applied (Installed={0} Available={1} Cat='{2}' Search='{3}')" -f $script:InstalledFiltered.Count,$script:AvailableFiltered.Count,$catLabel,$search) 'DEBUG'
   if ($LblStatus) { $LblStatus.Text = "Installed: $($script:InstalledFiltered.Count) | Available: $($script:AvailableFiltered.Count)" }
   } catch {
-    Write-Log ("Apply-FilterSimple error: " + $_) 'ERROR'
+    Write-Log ("Invoke-FilterSimple error: " + $_) 'ERROR'
   }
 }
 
-function Apply-Filter {
-  if ($script:SimpleMode) { Apply-FilterSimple; return }
+function Invoke-Filter {
+  if ($script:SimpleMode) { Invoke-FilterSimple; return }
   if ($script:ApplyFilterRunning) { return }
   $script:ApplyFilterRunning = $true
   try {
   $swFilter = [System.Diagnostics.Stopwatch]::StartNew()
-  Write-Log ("Apply-Filter START (InitialLoadComplete={0})" -f $script:InitialLoadComplete) 'DEBUG'
+  Write-Log ("Invoke-Filter START (InitialLoadComplete={0})" -f $script:InitialLoadComplete) 'DEBUG'
   $search = ([string]$TxtSearch.Text).Trim()
   $cat    = $script:CurrentCategory
 
@@ -800,17 +800,17 @@ function Apply-Filter {
     return ($row.FileName.ToLower().Contains($s) -or $row.Path.ToLower().Contains($s) -or ($row.Provider -and $row.Provider.ToLower().Contains($s)) -or ($row.Class -and $row.Class.ToLower().Contains($s)) -or ($row.DriverVer -and $row.DriverVer.ToLower().Contains($s)))
   }
   $availArray = if ($null -eq $avail) { @() } else { @($avail) }
-  if ($folderInventory.Count -eq 0) { Write-Log 'Apply-Filter: FolderInventoryAll empty (scan produced 0 parsed INFs).' 'WARN' }
-  Write-Log ("Apply-Filter: raw inventory={0} after category/search filter={1} (category='{2}', search='{3}')" -f ($folderInventory.Count), ($availArray.Count), $cat, $search) 'DEBUG'
+  if ($folderInventory.Count -eq 0) { Write-Log 'Invoke-Filter: FolderInventoryAll empty (scan produced 0 parsed INFs).' 'WARN' }
+  Write-Log ("Invoke-Filter: raw inventory={0} after category/search filter={1} (category='{2}', search='{3}')" -f ($folderInventory.Count), ($availArray.Count), $cat, $search) 'DEBUG'
 
   # Exclude by INF name if already installed (same OriginalFileName)
   $installedMap = @{}
   foreach ($d in $installedAll) { if ($d.OriginalFileName) { $installedMap[$d.OriginalFileName.ToLower()] = $true } }
   $showTwins = ($ChkShowTwins -and $ChkShowTwins.IsChecked)
   if ($showTwins) {
-    $script:AvailableFiltered = Ensure-Array $availArray
+    $script:AvailableFiltered = Get-Array $availArray
   } else {
-    $script:AvailableFiltered = Ensure-Array ($availArray | Where-Object { $_.FileName -and -not $installedMap.ContainsKey( (($_.FileName) -as [string]).ToLower() ) })
+    $script:AvailableFiltered = Get-Array ($availArray | Where-Object { $_.FileName -and -not $installedMap.ContainsKey( (($_.FileName) -as [string]).ToLower() ) })
   }
   if ($availArray.Count -gt 0 -and $script:AvailableFiltered.Count -eq 0 -and -not $showTwins) {
     Write-Log 'All available drivers filtered out because matching INF names already installed and Show Twins disabled.' 'INFO'
@@ -842,7 +842,7 @@ function Apply-Filter {
     $cat = $null
     # Re-run filter quickly (prevent reentrancy by temporarily clearing flag)
     $script:ApplyFilterRunning = $false
-    return Apply-Filter
+    return Invoke-Filter
   }
   if ($doTag) {
     $mapInstalledByKey = @{ }
@@ -861,7 +861,7 @@ function Apply-Filter {
       $key = (([string]$row.Provider).Trim().ToLower() + '|' + ([string]$row.Class).Trim().ToLower() + '|' + ([string]$row.FileName).Trim().ToLower())
       if (-not ($row.PSObject.Properties['ColorTag'])) { $row | Add-Member -NotePropertyName ColorTag -NotePropertyValue $null -Force }
       if ($mapInstalledByKey.ContainsKey($key)) {
-        $best = $mapInstalledByKey[$key] | Sort-Object -Property @{Expression={ (Parse-DriverVersion $_.Version).Version }}, @{Expression={ (Parse-DriverVersion $_.Date).Date }} -Descending | Select-Object -First 1
+        $best = $mapInstalledByKey[$key] | Sort-Object -Property @{Expression={ (Get-DriverVersionInfo $_.Version).Version }}, @{Expression={ (Get-DriverVersionInfo $_.Date).Date }} -Descending | Select-Object -First 1
         $cmp = Compare-DriverVersions -Left $row.DriverVer -Right $best.Version
         if ($cmp -gt 0) { $row.ColorTag = 'Newer' }
         elseif ($cmp -lt 0) { $row.ColorTag = 'Older' }
@@ -872,7 +872,7 @@ function Apply-Filter {
       $key = (([string]$row.ProviderName).Trim().ToLower() + '|' + ([string]$row.ClassName).Trim().ToLower() + '|' + ([string]$row.OriginalFileName).Trim().ToLower())
       if (-not ($row.PSObject.Properties['ColorTag'])) { $row | Add-Member -NotePropertyName ColorTag -NotePropertyValue $null -Force }
       if ($mapAvailableByKey.ContainsKey($key)) {
-        $best = $mapAvailableByKey[$key] | Sort-Object -Property @{Expression={ (Parse-DriverVersion $_.DriverVer).Version }}, @{Expression={ (Parse-DriverVersion $_.DriverVer).Date }} -Descending | Select-Object -First 1
+        $best = $mapAvailableByKey[$key] | Sort-Object -Property @{Expression={ (Get-DriverVersionInfo $_.DriverVer).Version }}, @{Expression={ (Get-DriverVersionInfo $_.DriverVer).Date }} -Descending | Select-Object -First 1
         $cmp = Compare-DriverVersions -Left $best.DriverVer -Right $row.Version
         if ($cmp -gt 0) { $row.ColorTag = 'Older' }
         elseif ($cmp -lt 0) { $row.ColorTag = 'Newer' }
@@ -886,9 +886,9 @@ function Apply-Filter {
     $LvInstalled.ItemsSource = $null
     $LvInstalled.ItemsSource = @($script:InstalledFiltered)
   } catch { Write-Log ("LvInstalled ItemsSource assignment error: " + $_) 'ERROR' }
-    $swFilter.Stop(); Write-Log ("Apply-Filter END {0} ms (Avail={1} Inst={2} Tagged={3})" -f $swFilter.ElapsedMilliseconds,$script:AvailableFiltered.Count,$script:InstalledFiltered.Count, (if ($doTag) { 'Yes' } else { 'No' })) 'DEBUG'
+    $swFilter.Stop(); Write-Log ("Invoke-Filter END {0} ms (Avail={1} Inst={2} Tagged={3})" -f $swFilter.ElapsedMilliseconds,$script:AvailableFiltered.Count,$script:InstalledFiltered.Count, (if ($doTag) { 'Yes' } else { 'No' })) 'DEBUG'
   } catch {
-    Write-Log ("Apply-Filter hard failure: " + $_) 'ERROR'
+    Write-Log ("Invoke-Filter hard failure: " + $_) 'ERROR'
   } finally { $script:ApplyFilterRunning = $false }
 }
 #endregion
@@ -936,8 +936,8 @@ function Invoke-InstallDrivers {
       Write-Log "Install failed for $($item.FileName): $_" 'ERROR'
     }
   }
-  Load-InstalledCache
-  Apply-Filter
+  Import-InstalledCache
+  Invoke-Filter
   $Prg.Value = 0
 
   # Attempt to map the installed INFs to published names (oemXX.inf)
@@ -1004,8 +1004,8 @@ function Invoke-RemoveDriversByPublishedName {
       }
   } catch { $Prg.IsIndeterminate = $false; Write-Log ("Removal failed for {0}: {1}" -f $pn, $_) 'ERROR' }
   }
-  Load-InstalledCache
-  Apply-Filter
+  Import-InstalledCache
+  Invoke-Filter
   $Prg.Value = 0
 }
 
@@ -1031,7 +1031,7 @@ function Invoke-RestoreLastRemoval {
   $toRestore = $script:LastRemovalBackups | Where-Object { Test-Path -LiteralPath $_ }
   if ($toRestore.Count -eq 0) { Write-Log 'Backup directories are missing; cannot restore.' 'ERROR'; return }
   foreach ($dir in $toRestore) { Restore-DriverBackup -BackupDir $dir }
-  Load-InstalledCache; Apply-Filter
+  Import-InstalledCache; Invoke-Filter
 }
 #endregion
 
@@ -1144,21 +1144,21 @@ $BtnScan.Add_Click({
     if (-not $script:ScanInProgress) { Scan-Folder $TxtFolder.Text }
   } catch { Write-Log $_ 'ERROR' }
 })
-$BtnRefresh.Add_Click({ Load-InstalledCache; Apply-Filter })
-$BtnApplyFilter.Add_Click({ Apply-Filter })
-$BtnClearFilter.Add_Click({ $TxtSearch.Text=''; Apply-Filter })
-$TxtSearch.Add_KeyDown({ param($s,$e) if ($e.Key -eq 'Return') { Apply-Filter } })
-$ChkShowTwins.Add_Checked({ Apply-Filter })
-$ChkShowTwins.Add_Unchecked({ Apply-Filter })
+$BtnRefresh.Add_Click({ Import-InstalledCache; Invoke-Filter })
+$BtnApplyFilter.Add_Click({ Invoke-Filter })
+$BtnClearFilter.Add_Click({ $TxtSearch.Text=''; Invoke-Filter })
+$TxtSearch.Add_KeyDown({ param($s,$e) if ($e.Key -eq 'Return') { Invoke-Filter } })
+$ChkShowTwins.Add_Checked({ Invoke-Filter })
+$ChkShowTwins.Add_Unchecked({ Invoke-Filter })
 
 # Only buttons
-$BtnOnlyWebcams.Add_Click(  { $script:CurrentCategory = 'Webcams';   Apply-Filter })
-$BtnOnlyAudio.Add_Click(    { $script:CurrentCategory = 'Audio';     Apply-Filter })
-$BtnOnlyBluetooth.Add_Click({ $script:CurrentCategory = 'Bluetooth'; Apply-Filter })
-$BtnOnlyNetwork.Add_Click(  { $script:CurrentCategory = 'Network';   Apply-Filter })
-$BtnOnlyStorage.Add_Click(  { $script:CurrentCategory = 'Storage';   Apply-Filter })
-$BtnOnlyChipset.Add_Click(  { $script:CurrentCategory = 'Chipset';   Apply-Filter })
-$BtnShowAll.Add_Click(      { $script:CurrentCategory = $null;       Apply-Filter })
+$BtnOnlyWebcams.Add_Click(  { $script:CurrentCategory = 'Webcams';   Invoke-Filter })
+$BtnOnlyAudio.Add_Click(    { $script:CurrentCategory = 'Audio';     Invoke-Filter })
+$BtnOnlyBluetooth.Add_Click({ $script:CurrentCategory = 'Bluetooth'; Invoke-Filter })
+$BtnOnlyNetwork.Add_Click(  { $script:CurrentCategory = 'Network';   Invoke-Filter })
+$BtnOnlyStorage.Add_Click(  { $script:CurrentCategory = 'Storage';   Invoke-Filter })
+$BtnOnlyChipset.Add_Click(  { $script:CurrentCategory = 'Chipset';   Invoke-Filter })
+$BtnShowAll.Add_Click(      { $script:CurrentCategory = $null;       Invoke-Filter })
 
 $BtnInstallSelected.Add_Click({ Invoke-InstallDrivers $LvAvailable.SelectedItems })
 $BtnInstallAll.Add_Click({ Invoke-InstallDrivers $LvAvailable.Items })
@@ -1321,7 +1321,7 @@ function Start-LoadInstalledAsync {
         if ($TxtStartupStatus) { $TxtStartupStatus.Text = "Gathering raw driver list $($spin[$si])" }
         [System.Windows.Forms.Application]::DoEvents()
       }
-      if ($script:StartupCancel) { try { Stop-Job $job -Force -ErrorAction SilentlyContinue } catch {}; try { Remove-Job $job -Force -ErrorAction SilentlyContinue } catch {}; $script:InstalledCacheAll=@(); Apply-Filter; return }
+      if ($script:StartupCancel) { try { Stop-Job $job -Force -ErrorAction SilentlyContinue } catch {}; try { Remove-Job $job -Force -ErrorAction SilentlyContinue } catch {}; $script:InstalledCacheAll=@(); Invoke-Filter; return }
       $raw = Receive-Job -Job $job -ErrorAction SilentlyContinue
       try { Remove-Job $job -Force -ErrorAction SilentlyContinue } catch {}
 
@@ -1419,7 +1419,7 @@ function Start-LoadInstalledAsync {
 
       $script:InstalledCacheAll = @($results | Where-Object { $_ })
       Write-Log ("Startup (SimpleMode) enumeration complete. InstalledCacheAll count={0}" -f ($script:InstalledCacheAll.Count)) 'INFO'
-      Apply-Filter
+      Invoke-Filter
       $script:InitialLoadComplete = $true
       if ($LblStatus) { $LblStatus.Text = "Installed loaded: $($script:InstalledCacheAll.Count) drivers" }
     } catch {
@@ -1477,7 +1477,7 @@ function Start-LoadInstalledAsync {
       Start-Sleep -Milliseconds 120
       [System.Windows.Forms.Application]::DoEvents()
     }
-    if ($script:StartupCancel) { try { Stop-Job $job -Force -ErrorAction SilentlyContinue } catch {}; try { Remove-Job $job -Force -ErrorAction SilentlyContinue } catch {}; $script:InstalledCacheAll = @(); Apply-Filter; return }
+    if ($script:StartupCancel) { try { Stop-Job $job -Force -ErrorAction SilentlyContinue } catch {}; try { Remove-Job $job -Force -ErrorAction SilentlyContinue } catch {}; $script:InstalledCacheAll = @(); Invoke-Filter; return }
     $raw = Receive-Job -Job $job -ErrorAction SilentlyContinue
     try { Remove-Job $job -Force -ErrorAction SilentlyContinue } catch {}
 
@@ -1544,7 +1544,7 @@ function Start-LoadInstalledAsync {
     if ($script:StartupCancel) { Write-Log 'Startup load canceled by user.' 'WARN' }
   $script:InstalledCacheAll = if ($script:StartupCancel) { @() } else { $results }
   Write-Log ("Startup enumeration complete. InstalledCacheAll count={0}" -f $script:InstalledCacheAll.Count) 'INFO'
-  Apply-Filter
+  Invoke-Filter
   $script:InitialLoadComplete = $true
   Write-Log 'Initial load marked complete.' 'DEBUG'
   } finally {
