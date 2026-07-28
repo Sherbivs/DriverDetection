@@ -151,7 +151,7 @@ $LvInstalled.ItemsSource = GetInstalledDrivers
 [void]$win.ShowDialog()
 
 # EOF
-function Ensure-RootCached {
+function Ensure-RootCache {
   param([Parameter(Mandatory)] [string]$SourceRoot)
   if (-not (Test-IsNetworkPath $SourceRoot)) { return $SourceRoot }
   try {
@@ -183,7 +183,7 @@ function Ensure-RootCached {
       Write-Log 'Cache failed; using network path directly.' 'WARN'
       return $SourceRoot
     }
-  } catch { Write-Log ("Ensure-RootCached failed: {0}" -f $_) 'WARN'; return $SourceRoot }
+  } catch { Write-Log ("Ensure-RootCache failed: {0}" -f $_) 'WARN'; return $SourceRoot }
 }
 #endregion
 
@@ -507,7 +507,7 @@ function Import-InstalledCache {
   Invoke-Filter
 }
 
-function Scan-Folder {
+function Start-ScanFolder {
   param([string]$Folder)
   if ($script:ScanInProgress) {
     # If already scanning, treat invocation as cancel request (safety guard if handler missed)
@@ -527,7 +527,7 @@ function Scan-Folder {
     # If network source, cache entire tree locally once for fast, reliable operations
     $scanRoot = $Folder
     if (Test-IsNetworkPath $Folder) {
-      $scanRoot = Ensure-RootCached -SourceRoot $Folder
+      $scanRoot = Ensure-RootCache -SourceRoot $Folder
       if ($scanRoot -ne $Folder) { Write-Log ("Scanning from local cache: {0}" -f $scanRoot) }
     }
   # Phase 1: enumerate directories and files with determinate progress
@@ -632,7 +632,7 @@ function Scan-Folder {
     }
   } catch {
     $etype = $_.Exception.GetType().FullName
-    Write-Log ("Scan-Folder fatal: $etype :: $_ :: Stack=`n$($_.ScriptStackTrace)") 'ERROR'
+    Write-Log ("Start-ScanFolder fatal: $etype :: $_ :: Stack=`n$($_.ScriptStackTrace)") 'ERROR'
     throw
   } finally {
     $script:ScanInProgress = $false
@@ -780,7 +780,7 @@ function Invoke-Filter {
       if ($looksLikePath -and (Test-Path -LiteralPath $search -PathType Container)) {
         $script:GuardScanFromSearch = $true
         if ($TxtFolder.Text -ne $search) { $TxtFolder.Text = $search }
-        Scan-Folder -Folder $search
+        Start-ScanFolder -Folder $search
       }
     }
   } catch { Write-Log ("Scan from search failed: {0}" -f $_) 'WARN' }
@@ -1141,7 +1141,7 @@ $BtnScan.Add_Click({
       if ($LblStatus) { $LblStatus.Text = 'Canceling scan…' }
       return
     }
-    if (-not $script:ScanInProgress) { Scan-Folder $TxtFolder.Text }
+    if (-not $script:ScanInProgress) { Start-ScanFolder $TxtFolder.Text }
   } catch { Write-Log $_ 'ERROR' }
 })
 $BtnRefresh.Add_Click({ Import-InstalledCache; Invoke-Filter })
